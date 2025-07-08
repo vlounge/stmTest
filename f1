@@ -1,0 +1,66 @@
+#include "ff.h"
+#include "diskio.h"
+#include "stm32h7xx_hal_sd.h"
+
+extern SD_HandleTypeDef hsd;  // Должен быть объявлен и инициализирован в main.c
+
+// Инициализация диска (pdrv = 0 для SD-карты)
+DSTATUS disk_initialize(BYTE pdrv) {
+    if (pdrv != 0) return STA_NOINIT;  // Поддерживается только 1 диск (SD-карта)
+
+    if (HAL_SD_Init(&hsd) != HAL_OK) {
+        return STA_NOINIT;
+    }
+
+    // Настройка 4-битного режима (обязательно для SD-карт!)
+    if (HAL_SD_ConfigWideBusOperation(&hsd, SDMMC_BUS_WIDE_4B) != HAL_OK) {
+        return STA_NOINIT;
+    }
+
+    return 0;  // Успех
+}
+
+// Получить статус диска
+DSTATUS disk_status(BYTE pdrv) {
+    if (pdrv != 0) return STA_NOINIT;
+    return (HAL_SD_GetCardState(&hsd) == HAL_SD_CARD_TRANSFER) ? 0 : STA_NOINIT;
+}
+
+// Чтение секторов (LBA - логический блок, count - количество секторов)
+DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count) {
+    if (pdrv != 0) return RES_PARERR;
+    if (HAL_SD_ReadBlocks(&hsd, buff, sector, count, 1000) != HAL_OK) return RES_ERROR;
+    return RES_OK;
+}
+
+// Запись секторов
+DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count) {
+    if (pdrv != 0) return RES_PARERR;
+    if (HAL_SD_WriteBlocks(&hsd, (uint8_t*)buff, sector, count, 1000) != HAL_OK) return RES_ERROR;
+    return RES_OK;
+}
+
+// Контрольные операции (ioctl)
+DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff) {
+    if (pdrv != 0) return RES_PARERR;
+
+    HAL_SD_CardInfoTypeDef CardInfo;
+    switch (cmd) {
+        case CTRL_SYNC:
+            HAL_SD_CheckWriteOperation(&hsd, 1000);  // Ожидание завершения записи
+            return RES_OK;
+        case GET_SECTOR_COUNT:
+            HAL_SD_GetCardInfo(&hsd, &CardInfo);
+            *(DWORD*)buff = CardInfo.LogBlockNbr;  // Общее число секторов
+            return RES_OK;
+        case GET_SECTOR_SIZE:
+            HAL_SD_GetCardInfo(&hsd, &CardInfo);
+            *(WORD*)buff = CardInfo.LogBlockSize;  // Размер сектора (обычно 512B)
+            return RES_OK;
+        case GET_BLOCK_SIZE:
+            *(DWORD*)buff = 1;  // Размер блока для стирания (1 сектор)
+            return RES_OK;
+        default:
+            return RES_PARERR;
+    }
+}

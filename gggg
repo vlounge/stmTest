@@ -1,0 +1,117 @@
+В вашем коде есть несколько проблем, которые могут мешать корректной работе SD-карты. Давайте их исправим:
+
+### Основные проблемы и исправления:
+
+1. **Неправильная настройка GPIO для SDMMC**:
+   - В функции `MX_GPIO_Init()` неправильно настроены пины для SDMMC (используется GPIOB вместо GPIOC/GPIOD)
+   - Не установлена подтяжка для линии CMD (должна быть GPIO_PULLUP)
+
+2. **Настройка SDMMC**:
+   - Неправильный делитель частоты (ClockDiv = 0)
+   - Нет задержки перед инициализацией SD-карты
+
+3. **Проверка состояния карты**:
+   - Неправильная логика проверки состояния карты
+
+### Исправленный код:
+
+1. В функции `MX_GPIO_Init()` замените:
+
+```c
+GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9 |GPIO_PIN_10 |GPIO_PIN_11 |GPIO_PIN_12;
+GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+GPIO_InitStruct.Pull = GPIO_NOPULL;
+GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+GPIO_InitStruct.Alternate = GPIO_AF12_SDMMC1;
+HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);  // <-- Ошибка: должно быть GPIOC
+
+GPIO_InitStruct.Pin = GPIO_PIN_2;
+GPIO_InitStruct.Pull = GPIO_PULLUP;  // <-- Добавлено
+HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);  // <-- Ошибка: должно быть GPIOD
+```
+
+На:
+
+```c
+// Настройка пинов данных и CLK (GPIOC)
+GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11 | GPIO_PIN_12;
+GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+GPIO_InitStruct.Pull = GPIO_NOPULL;
+GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+GPIO_InitStruct.Alternate = GPIO_AF12_SDMMC1;
+HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+// Настройка пина CMD (GPIOD) с подтяжкой
+GPIO_InitStruct.Pin = GPIO_PIN_2;
+GPIO_InitStruct.Pull = GPIO_PULLUP;
+HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+```
+
+2. В функции `MX_SDMMC1_SD_Init()` измените:
+
+```c
+hsd1.Init.ClockDiv = 0;  // <-- Ошибка: слишком высокая частота
+```
+
+На:
+
+```c
+hsd1.Init.ClockDiv = 4;  // Начните с делителя 4, можно увеличить если есть проблемы
+```
+
+И добавьте задержку перед инициализацией:
+
+```c
+HAL_Delay(100);  // Даем карте время на инициализацию
+if(HAL_SD_Init(&hsd1) != HAL_OK) {
+    uint32_t error = HAL_SD_GetError(&hsd1);
+    printf("SD Init Error: 0x%lX\n", error);
+    Error_Handler();
+}
+```
+
+3. В функции `main()` измените проверку состояния карты:
+
+```c
+if(f_mount(&SDFatFS, (TCHAR const*)SDPath, 0) != FR_OK) {
+    printf("Mount failed. Trying to format...\n");
+    
+    // Попытка форматирования
+    if(f_mkfs((TCHAR const*)SDPath, FM_FAT32, 0, rtext, sizeof(rtext)) != FR_OK) {
+        printf("Format failed. Card error.\n");
+        Error_Handler();
+    }
+    
+    // Повторная попытка монтирования
+    if(f_mount(&SDFatFS, (TCHAR const*)SDPath, 0) != FR_OK) {
+        printf("Mount after format failed.\n");
+        Error_Handler();
+    }
+}
+
+HAL_SD_CardStateTypeDef state = HAL_SD_GetCardState(&hsd1);
+if(state != HAL_SD_CARD_TRANSFER) {
+    printf("Card not ready. State: %d\n", state);
+    Error_Handler();
+}
+```
+
+### Дополнительные рекомендации:
+
+1. **Проверьте аппаратное подключение**:
+   - Убедитесь, что SD-карта правильно вставлена в разъем
+   - Проверьте напряжение питания (должно быть 3.3V)
+
+2. **Настройте правильную частоту**:
+   - Если карта не определяется, попробуйте увеличить делитель (ClockDiv = 8, 16 и т.д.)
+
+3. **Используйте отладочный вывод**:
+   - Добавьте printf для вывода состояния карты и ошибок
+
+4. **Попробуйте другую карту**:
+   - Некоторые SD-карты могут быть несовместимы
+
+5. **Проверьте настройки в CubeMX**:
+   - Убедитесь, что в CubeMX правильно настроен SDMMC (4-bit mode, правильные пины)
+
+Эти изменения должны помочь решить проблемы с инициализацией SD-карты. Если проблема сохраняется, проверьте осциллографом сигналы на линиях CLK и CMD - должны быть четкие прямоугольные импульсы.

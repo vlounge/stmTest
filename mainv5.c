@@ -53,7 +53,8 @@ uint32_t byteswritten, bytesread; /* File write/read counts */
 uint8_t wtext[] = "STM32 FATFS works great!"; /* File write buffer */
 uint8_t rtext[_MAX_SS];/* File read buffer */
 FIL file;
-
+OsTaskId taskId;
+OsTaskParameters taskParams;
 /**
  * @brief Set cursor location
  * @param[in] line Line number
@@ -271,93 +272,81 @@ static void MX_SDMMC1_SD_Init(void)
     }
 }
 void SD(void){
+	/*
 	HAL_SD_CardStateTypeDef state = HAL_SD_GetCardState(&hsd1);
-	    if(state != HAL_SD_CARD_TRANSFER)
-	    {
-	        //Error_Handler();
-	    }
+	if(state != HAL_SD_CARD_TRANSFER)
+	{
+		//Error_Handler();
+	}
 
-	    // Монтирование файловой системы
-	    FRESULT res = f_mount(&SDFatFS, SDPath, 1);
-	    if(res != FR_OK)
-	    {
+	// Монтирование файловой системы
+	res = f_mount(&SDFatFS, SDPath, 1);
+	if(res != FR_OK)
+	{
 
 
-	        // Попытка форматирования
-	        if(f_mkfs(SDPath, FM_FAT32, 0, rtext, sizeof(rtext)) != FR_OK)
-	        {
-	            //Error_Handler();
-	        }
+		// Попытка форматирования
+		if(f_mkfs(SDPath, FM_FAT32, 0, rtext, sizeof(rtext)) != FR_OK)
+		{
+			//Error_Handler();
+		}
 
-	        // Повторная попытка монтирования
-	        if(f_mount(&SDFatFS, SDPath, 0) != FR_OK)
-	        {
-	            //Error_Handler();
-	        }
-	    }
-	    if(f_open(&file, "TEST.TXT", FA_WRITE | FA_CREATE_ALWAYS) == FR_OK)
-	        {
-	            UINT bytes_written;
-	            if(f_write(&file, wtext, strlen((char*)wtext), &bytes_written) != FR_OK || bytes_written != strlen((char*)wtext))
-	            {
-	            	//Error_Handler();
-	            }
-	            f_close(&file);
+		// Повторная попытка монтирования
+		if(f_mount(&SDFatFS, SDPath, 0) != FR_OK)
+		{
+			//Error_Handler();
+		}
+	}*/
+	if(f_open(&file, "TEST.TXT", FA_WRITE | FA_CREATE_ALWAYS) == FR_OK)
+		{
+			UINT bytes_written;
+			if(f_write(&file, wtext, strlen((char*)wtext), &bytes_written) != FR_OK || bytes_written != strlen((char*)wtext))
+			{
+				//Error_Handler();
+			}
+			f_close(&file);
 
-	        }
-	        else
-	        {
-	        	//Error_Handler();
-	        }
+		}
+		else
+		{
+			//Error_Handler();
+		}
 }
 
 
 
 void sdTask(void *param)
 {
-	HAL_SD_CardStateTypeDef state = HAL_SD_GetCardState(&hsd1);
-		    if(state != HAL_SD_CARD_TRANSFER)
-		    {
-		        //Error_Handler();
-		    }
-
-		    // Монтирование файловой системы
-		    FRESULT res = f_mount(&SDFatFS, SDPath, 1);
-		    if(res != FR_OK)
-		    {
-
-
-		        // Попытка форматирования
-		        if(f_mkfs(SDPath, FM_FAT32, 0, rtext, sizeof(rtext)) != FR_OK)
-		        {
-		            //Error_Handler();
-		        }
-
-		        // Повторная попытка монтирования
-		        if(f_mount(&SDFatFS, SDPath, 0) != FR_OK)
-		        {
-		            //Error_Handler();
-		        }
-		    }
-		    if(f_open(&file, "TEST.TXT", FA_WRITE | FA_CREATE_ALWAYS) == FR_OK)
-		        {
-		            UINT bytes_written;
-		            if(f_write(&file, wtext, strlen((char*)wtext), &bytes_written) != FR_OK || bytes_written != strlen((char*)wtext))
-		            {
-		            	//Error_Handler();
-		            }
-		            f_close(&file);
-
-		        }
-		        else
-		        {
-		        	//Error_Handler();
-		        }
-
+	MX_SDMMC1_SD_Init();
+	MX_FATFS_Init();
+	uint8_t prev_sd_status = 0;
+	uint8_t current_sd_status = 0;
+	uint8_t mounted = 0;
    //Endless loop
    while(1)
    {
+	   HAL_SD_CardStateTypeDef state = HAL_SD_GetCardState(&hsd1);
+	   current_sd_status = ((state != HAL_SD_CARD_ERROR) ||(state != 0));
+	   //изменилось ли состояние
+	   if(current_sd_status != prev_sd_status){
+		   //вставлена ли sd карта
+		   if(current_sd_status){
+			   MX_SDMMC1_SD_Init();
+			   MX_FATFS_Init();
+			   mounted = (f_mount(&SDFatFS, SDPath,1) == FR_OK);
+		   }else{
+			   //деинсталяция
+			   if(mounted){
+				   f_mount(NULL, SDPath,0);
+				   mounted = 0;
+			   }
+			   HAL_SD_DeInit(&hsd1);
+		   }
+		   prev_sd_status = current_sd_status;
 
+	   if(mounted && (HAL_SD_GetCardState(&hsd1)== HAL_SD_CARD_TRANSFER)){
+		   SD();
+	   }
       //Loop delay
       osDelayTask(100);
    }
@@ -365,25 +354,24 @@ void sdTask(void *param)
 
 int_t main(void)
 {
-	OsTaskId taskId;
-	OsTaskParameters taskParams;
+
     // Инициализация системы
     MPU_Config();
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
-    MX_SDMMC1_SD_Init();
-    MX_FATFS_Init();
+
+    debugInit(115200);
 
     osInitKernel();
 
-    debugInit(115200);
+
     // Работа с SD-картой
 
 
     //Set task parameters
 	taskParams = OS_TASK_DEFAULT_PARAMS;
-	taskParams.stackSize = 500;
+	taskParams.stackSize = 1024;
 	taskParams.priority = OS_TASK_PRIORITY_NORMAL;
 	//Create user task
 	taskId = osCreateTask("SD Task", sdTask, NULL, &taskParams);
@@ -391,9 +379,9 @@ int_t main(void)
 	if(taskId == OS_INVALID_TASK_ID)
 	{
 	  //Debug message
-	  TRACE_ERROR("Failed to create task!\r\n");
+		Error_Handler();
 	}
-	
+
 	//Start the execution of tasks
 	osStartKernel();
 

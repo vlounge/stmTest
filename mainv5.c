@@ -386,7 +386,7 @@ int_t main(void)
 	taskParams.stackSize = 500;
 	taskParams.priority = OS_TASK_PRIORITY_NORMAL;
 	//Create user task
-	taskId = osCreateTask("SD Task", ывTask, NULL, &taskParams);
+	taskId = osCreateTask("SD Task", sdTask, NULL, &taskParams);
 	//Failed to create the task?
 	if(taskId == OS_INVALID_TASK_ID)
 	{

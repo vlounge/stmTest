@@ -54,6 +54,48 @@ uint8_t wtext[] = "STM32 FATFS works great!"; /* File write buffer */
 uint8_t rtext[_MAX_SS];/* File read buffer */
 FIL file;
 
+/**
+ * @brief Set cursor location
+ * @param[in] line Line number
+ * @param[in] column Column number
+ **/
+
+void lcdSetCursor(uint_t line, uint_t column)
+{
+   lcdLine = MIN(line, 11);
+   lcdColumn = MIN(column, 30);
+}
+
+
+/**
+ * @brief Write a character to the LCD display
+ * @param[in] c Character to be written
+ **/
+
+void lcdPutChar(char_t c)
+{
+   if(c == '\r')
+   {
+      lcdColumn = 0;
+   }
+   else if(c == '\n')
+   {
+      lcdColumn = 0;
+      lcdLine++;
+   }
+   else if(lcdLine < 11 && lcdColumn < 30)
+   {
+      //Display current character
+      UTIL_LCD_DisplayChar(lcdColumn * 16, lcdLine * 24, c);
+
+      //Advance the cursor position
+      if(++lcdColumn >= 30)
+      {
+         lcdColumn = 0;
+         lcdLine++;
+      }
+   }
+}
 
 
 /**
@@ -228,7 +270,6 @@ static void MX_SDMMC1_SD_Init(void)
         Error_Handler();
     }
 }
-
 void SD(void){
 	HAL_SD_CardStateTypeDef state = HAL_SD_GetCardState(&hsd1);
 	    if(state != HAL_SD_CARD_TRANSFER)
@@ -324,6 +365,8 @@ void sdTask(void *param)
 
 int_t main(void)
 {
+	OsTaskId taskId;
+	OsTaskParameters taskParams;
     // Инициализация системы
     MPU_Config();
     HAL_Init();
@@ -332,6 +375,7 @@ int_t main(void)
     MX_SDMMC1_SD_Init();
     MX_FATFS_Init();
 
+    osInitKernel();
 
     debugInit(115200);
     // Работа с SD-картой
@@ -342,7 +386,7 @@ int_t main(void)
 	taskParams.stackSize = 500;
 	taskParams.priority = OS_TASK_PRIORITY_NORMAL;
 	//Create user task
-	taskId = osCreateTask("SD Task", sdTask, NULL, &taskParams);
+	taskId = osCreateTask("SD Task", ывTask, NULL, &taskParams);
 	//Failed to create the task?
 	if(taskId == OS_INVALID_TASK_ID)
 	{

@@ -1,0 +1,4 @@
+RCC_PeriphCLKInitTypeDef RCC_PeriphClkInit = {0};
+RCC_PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB;
+RCC_PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_HSI48;
+HAL_RCCEx_PeriphCLKConfig(&RCC_PeriphClkInit);
